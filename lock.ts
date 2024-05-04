@@ -76,7 +76,7 @@ export class RWLock {
         resolve: resolve!,
         ty: "writing"
       });
-    }else{
+    } else {
       return null;
     }
     try {
@@ -88,23 +88,27 @@ export class RWLock {
   }
 
   async waitReadLock<T>(channelId: Snowflake, transaction: () => Promise<T>): Promise<T> {
-    const ctx = this.state.get(channelId);
-    if (ctx == null) {
-      let resolve: (value: unknown) => void;
-      const promise = new Promise(res => {
-        resolve = res;
-      });
-      this.state.set(channelId, {
-        cnt: 1,
-        promise,
-        resolve: resolve!,
-        ty: "reading"
-      });
-    } else if (ctx.ty === "reading") {
-      ++ctx.cnt;
-    } else {
-      await ctx.promise;
+    while (true) {
+      const ctx = this.state.get(channelId);
+      if (ctx == null) {
+        let resolve: (value: unknown) => void;
+        const promise = new Promise(res => {
+          resolve = res;
+        });
+        this.state.set(channelId, {
+          cnt: 1,
+          promise,
+          resolve: resolve!,
+          ty: "reading"
+        });
+      } else if (ctx.ty === "reading") {
+        ++ctx.cnt;
+        break;
+      } else {
+        await ctx.promise;
+      }
     }
+
     try {
       const result = await transaction();
       return result;

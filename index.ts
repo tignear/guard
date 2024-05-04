@@ -1,4 +1,5 @@
 import { ButtonInteraction, ButtonStyle, ChatInputCommandInteraction, Client, ComponentType, Interaction, InteractionReplyOptions, MessageCreateOptions, ModalSubmitInteraction, Snowflake, TextInputStyle } from "discord.js";
+import { RWLock } from "./lock";
 
 const TEXTFIELD_CUSTOM_ID = "textfield";
 const MODAL_CUSTOM_ID = "modal";
@@ -6,9 +7,9 @@ const BUTTON_CUSTOM_ID = "button";
 const client = new Client({
   intents: ["Guilds"]
 });
-const lock = new Set<string>();
+const lock = new RWLock();
 
-function createPostButton(): MessageCreateOptions & InteractionReplyOptions {
+function getPostButton(): MessageCreateOptions & InteractionReplyOptions {
   return {
     components: [
       {
@@ -26,35 +27,23 @@ function createPostButton(): MessageCreateOptions & InteractionReplyOptions {
   };
 }
 
-
-async function withLock<T>(channelId: Snowflake, transaction: () => Promise<T>): Promise<T | null> {
-  const locked = lock.has(channelId);
-  if (locked) {
-    return null;
-  }
-  lock.add(channelId);
-  try {
-    const result = transaction();
-    return result;
-  } finally {
-    lock.delete(channelId);
-  }
-}
-
 async function handleModalSubmit(intr: ModalSubmitInteraction) {
   const channel = intr.channel;
   if (!channel || !intr.inGuild()) {
     throw Error("unreachable");
   }
   const value = intr.fields.getTextInputValue(TEXTFIELD_CUSTOM_ID);
-  await intr.reply(value);
   const message = intr.message;
   if (message == null) {
     return;
   }
-  await withLock(channel.id, async () => {
-    await channel.messages.delete(message.id);
-    await channel.send(createPostButton())
+  await lock.waitReadLock(channel.id, async () => {
+    await intr.reply(value);
+  });
+
+  await lock.tryWriteLock(channel.id, async () => {
+     await message.delete();
+     await message.channel.send(getPostButton());
   });
 }
 async function handleButton(intr: ButtonInteraction) {
@@ -69,7 +58,7 @@ async function handleButton(intr: ButtonInteraction) {
             type: ComponentType.TextInput,
             customId: TEXTFIELD_CUSTOM_ID,
             required: true,
-            style: TextInputStyle.Paragraph,
+            style: TextInputStyle.Short,
             label: "text"
           }
         ]
@@ -84,7 +73,7 @@ async function handleChatInputCommand(intr: ChatInputCommandInteraction) {
       await intr.deferReply({
         ephemeral: true,
       });
-      await intr.channel!.send(createPostButton());
+      await intr.channel!.send(getPostButton());
       await intr.followUp({
         ephemeral: true,
         content: "ボタンを設置しました。"
@@ -113,7 +102,7 @@ client.once("ready", () => {
   client.application?.commands.set([{
     name: "place",
     description: "ボタン設置"
-  }]).then(console.log)
+  }])
 });
 
 client.login(process.env.DISCORD_TOKEN!)

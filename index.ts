@@ -1,4 +1,4 @@
-import { ButtonInteraction, ButtonStyle, ChatInputCommandInteraction, Client, ComponentType, Interaction, InteractionReplyOptions, MessageCreateOptions, ModalSubmitInteraction, Snowflake, TextInputStyle } from "discord.js";
+import { ButtonInteraction, ButtonStyle, ChatInputCommandInteraction, Client, ComponentType, DiscordAPIError, RESTJSONErrorCodes, Interaction, InteractionReplyOptions, MessageCreateOptions, ModalSubmitInteraction, Snowflake, TextInputStyle } from "discord.js";
 import { RWLock } from "./lock";
 
 const TEXTFIELD_CUSTOM_ID = "textfield";
@@ -42,8 +42,9 @@ async function handleModalSubmit(intr: ModalSubmitInteraction) {
   });
 
   await lock.tryWriteLock(channel.id, async () => {
-     await message.delete();
-     await message.channel.send(getPostButton());
+    const messageId = message.id;
+    await message.channel.send({ ...getPostButton(), nonce: messageId });
+    await message.delete();
   });
 }
 async function handleButton(intr: ButtonInteraction) {
